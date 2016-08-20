@@ -1,67 +1,4 @@
-# train = pd.merge(train, ppl, on='people_id')
-# submit = pd.merge(submit, ppl, on='people_id')
-# del ppl
-
-# # create a small validation set - 0.3%
-# msk = np.random.rand(train.shape[0]) < 0.003
-# test = train[msk]
-# train = train[~msk]
-
-# print "\nTraining on Full set of size: {}".format(train.shape)
-
-# # select target and remaining predictors
-# target = 'outcome'
-# predictors = pd.Series([x for x in train.columns if x not in [target]])
-
-# # Create DMatrix
-# dtrain = xgb.DMatrix(train[predictors.values].values,label=train[target].values)
-# dtest = xgb.DMatrix(test[predictors.values].values,label=test[target].values)
-
-# print "\nDMatrix initiated..."
-
-# # Validation set
-# evallist  = [(df_train,'train'),(df_test,'eval')]
-
-# num_round = 200
-# num_features = predictors.shape[0]
-
-# # TODO - annealed learning rate
-# # Train and save booster
-# bst = xgb.train( 
-#         params,\
-#         df_train,\
-#         num_boost_round=num_round,
-#         early_stopping_rounds=10,\
-#         evals=evallist,\
-#         verbose_eval=1)
-
-# # Feature importances - merge with predictors
-# fi_dict = bst.get_fscore()
-# fi_pred = {}
-# for key in fi_dict:
-#     num = int(key.replace('f',''))
-#     nkey = predictors[num]
-#     fi_pred[nkey] = fi_dict[key]
-
-# feat_imp = pd.Series(fi_pred).sort_values(ascending=False)
-# feat_imp = feat_imp/1.e-2/feat_imp.values.sum()
-
-# print "\nFeatures (full set):"
-# print feat_imp
-
-# # Saving model and feature importances
-# timestamp = datetime.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d')
-# modelfile = '/mnt/gcs-bucket/{}_{}feat_{}'.format(num_round,num_features,timestamp)
-
-# bst.save_model(modelfile+'.model')
-# feat_imp.to_csv(modelfile+'_features.csv')
-# predictors.to_csv(modelfile+'_predictors.csv')
-
-# print "\nCase saved to file: {}".format(modelfile)
-
-
-__author__ = 'ZFTurbo: https://kaggle.com/zfturbo'
-
+from __future__ import print_function
 import datetime
 import pandas as pd
 import numpy as np
@@ -70,7 +7,6 @@ from sklearn.cross_validation import train_test_split
 from sklearn.metrics import roc_auc_score
 import xgboost as xgb
 import random
-from operator import itemgetter
 import time
 import copy
 
@@ -81,35 +17,34 @@ def intersect(a, b):
 
 # add derived features here
 def derive_features(train, test):
-    # create a small validation set - 1%
-    mask = np.random.rand(train.shape[0]) < 0.01
+    # create a small validation set - 0.5%
+    mask = np.random.rand(train.shape[0]) < 0.5/1.e2
     crossval = train[mask]
     train = train[~mask]
 
-    # 1. mean outcome by activity date in training
-    mean_outcome = train.groupby('act_date').agg({'outcome':np.mean}).reset_index()
-    mean_outcome.columns = ['act_date','mean_outcome_by_act_date']
-    train = pd.merge(train,mean_outcome,on='act_date',how='left')
-    test = pd.merge(test,mean_outcome,on='act_date',how='left')
-    crossval = pd.merge(crossval,mean_outcome,on='act_date',how='left')
+    # 1. mean by various groups
+    # meanlist = [
+    #     [['act_date'],'mean_by_act_date'],\
+    #     [['ppl_date'],'mean_by_ppl_date'],\
+    #     [['act_date','ppl_char_38'],'mean_by_ch38_act_date'],
+    #     [['act_date','ppl_char_7'],'mean_by_ch7_act_date']]
 
-    # 2. mean outcome by ppl date in training
-    mean_outcome = train.groupby('ppl_date').agg({'outcome':np.mean}).reset_index()
-    mean_outcome.columns = ['ppl_date','mean_outcome_by_ppl_date']
-    train = pd.merge(train,mean_outcome,on='ppl_date',how='left')
-    test = pd.merge(test,mean_outcome,on='ppl_date',how='left')
-    crossval = pd.merge(crossval,mean_outcome,on='ppl_date',how='left')
+    # for key in meanlist:
+    #     basis = key[0]
+    #     label = key[1]
+    #     mean_outcome = train.groupby(basis).agg({'outcome':np.nanmean}).reset_index()
+    #     mean_outcome = mean_outcome.rename(columns={'outcome':label})
+    #     train = pd.merge(train,mean_outcome,on=basis,how='left')
+    #     test = pd.merge(test,mean_outcome,on=basis,how='left')
+    #     crossval = pd.merge(crossval,mean_outcome,on=basis,how='left')
 
-    # 3. mean outcome by activity date and people group in training
-    basis = ['act_date','ppl_group_1']
-    mean_outcome = train.groupby(basis).agg({'outcome':np.nanmean}).reset_index()
-    median_outcome = train.groupby(basis).agg({'outcome':np.nanmedian}).reset_index()
-    mean_outcome = mean_outcome.rename(columns={'outcome':'mean_by_grp_act_date'})
-    median_outcome = median_outcome.rename(columns={'outcome':'median_by_grp_act_date'})
-    mean_outcome = pd.merge(mean_outcome,median_outcome,on=basis,how='left')
-    train = pd.merge(train,mean_outcome,on=basis,how='left')
-    test = pd.merge(test,mean_outcome,on=basis,how='left')
-    crossval = pd.merge(crossval,mean_outcome,on=basis,how='left')
+    # # 2. median outcome by activity date and people group in training
+    # basis = ['act_date','ppl_group_1']
+    # median_outcome = train.groupby(basis).agg({'outcome':np.nanmedian}).reset_index()
+    # median_outcome = median_outcome.rename(columns={'outcome':'median_by_grp_act_date'})
+    # train = pd.merge(train,median_outcome,on=basis,how='left')
+    # test = pd.merge(test,median_outcome,on=basis,how='left')
+    # crossval = pd.merge(crossval,median_outcome,on=basis,how='left')
 
     return train, test, crossval
 
@@ -126,21 +61,21 @@ def get_features(train, test):
 
 def read_test_train():
     print("Read people.csv...")
-    people = pd.read_csv("input/people.csv",
+    people = pd.read_csv("../input/people.csv",
                        dtype={'people_id': np.str,
                               'activity_id': np.str,
                               'char_38': np.int32},
                        parse_dates=['date'])
 
     print("Load train.csv...")
-    train = pd.read_csv("input/act_train.csv",
+    train = pd.read_csv("../input/act_train.csv",
                         dtype={'people_id': np.str,
                                'activity_id': np.str,
                                'outcome': np.int8},
                         parse_dates=['date'])
 
     print("Load test.csv...")
-    test = pd.read_csv("input/act_test.csv",
+    test = pd.read_csv("../input/act_test.csv",
                        dtype={'people_id': np.str,
                               'activity_id': np.str},
                        parse_dates=['date'])
@@ -208,7 +143,7 @@ def get_importance(gbm, features):
 
 def run_single(train, test, valid, features, target, random_state=0):
     eta = 0.2
-    max_depth = 5
+    max_depth = 6
     subsample = 0.8
     colsample_bytree = 0.8
     start_time = time.time()
@@ -227,7 +162,7 @@ def run_single(train, test, valid, features, target, random_state=0):
         "seed": random_state,
     }
     num_boost_round = 150
-    early_stopping_rounds = 30
+    early_stopping_rounds = 10
     test_size = 0.1
 
     # X_train, X_valid = train_test_split(train, test_size=test_size, random_state=random_state)
@@ -258,7 +193,7 @@ def run_single(train, test, valid, features, target, random_state=0):
     test_prediction = gbm.predict(xgb.DMatrix(test[features]), ntree_limit=gbm.best_iteration+1)
 
     print('Training time: {} minutes'.format(round((time.time() - start_time)/60, 2)))
-    return test_prediction.tolist(), score
+    return test_prediction.tolist(), score, gbm, imp
 
 
 def run_kfold(nfolds, train, test, features, target, random_state=0):
@@ -337,11 +272,20 @@ def run_kfold(nfolds, train, test, features, target, random_state=0):
     return yfull_test['mean'].values, score
 
 
-def create_submission(score, test, prediction):
+def create_submission(score, test, prediction, model, importance):
     now = datetime.datetime.now()
+    
+    mod_file = 'model_' + str(score) + '_' + str(now.strftime("%Y-%m-%d-%H-%M")) + '.model'
+    print('Writing model: ', mod_file)
+    model.save_model('../output/'+mod_file)
+
+    imp_file = 'importance_' + str(score) + '_' + str(now.strftime("%Y-%m-%d-%H-%M")) + '.csv'
+    print('Writing importances: ', imp_file)
+    importance.to_csv('../output/'+imp_file)
+
     sub_file = 'submission_' + str(score) + '_' + str(now.strftime("%Y-%m-%d-%H-%M")) + '.csv'
     print('Writing submission: ', sub_file)
-    f = open(sub_file, 'w')
+    f = open('../output/'+sub_file, 'w')
     f.write('activity_id,outcome\n')
     total = 0
     for id in test['activity_id']:
@@ -356,7 +300,7 @@ print('Length of train: ', len(train))
 print('Length of test: ', len(test))
 print('Features [{}]: {}'.format(len(features), sorted(features)))
 
-test_prediction, score = run_single(train, test, crossval, features, 'outcome')
+test_prediction, score, model, importance = run_single(train, test, crossval, features, 'outcome')
 # test_prediction, score = run_kfold(3, train, test, features, 'outcome')
-create_submission(score, test, test_prediction)
+create_submission(score, test, test_prediction, model, importance)
 
