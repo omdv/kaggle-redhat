@@ -167,9 +167,11 @@ if __name__ == '__main__':
     d1 = pd.merge(d1, allCompaniesAndDays,
                   left_on=['group_1', 'activdate'], right_on=['group_1', 'date_p'], how='left')
 
-    # testsetdt = d1[d1['people_id'].isin(ppl.iloc[testset]['people_id'])][['activity_id', 'filled']]
-    ## There are no NAs.
-    # testsetdt.columns = [testsetdt.columns[0], 'outcome']
+    testsetdt = d1[d1['people_id'].isin(ppl.iloc[testset]['people_id'])][['activity_id', 'filled']]
+    # There are no NAs.
+    testsetdt.columns = [testsetdt.columns[0], 'outcome']
+    # save with NA to be filled with mean later
+    testsetdt.to_csv('../output/leak_predictions_NA.csv', index=False)
 
     # xgboost should add values for NA here.
 

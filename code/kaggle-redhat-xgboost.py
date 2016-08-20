@@ -161,7 +161,7 @@ def run_single(train, test, valid, features, target, random_state=0):
         "silent": 1,
         "seed": random_state,
     }
-    num_boost_round = 150
+    num_boost_round = 300
     early_stopping_rounds = 10
     test_size = 0.1
 
@@ -171,8 +171,8 @@ def run_single(train, test, valid, features, target, random_state=0):
 
     X_train = train
     X_valid = valid
-    print('Length train:', len(X_train.index))
-    print('Length valid:', len(X_valid.index))
+    print('Length of traininig:', len(X_train.index))
+    print('Length of validation:', len(X_valid.index))
     y_train = train[target]
     y_valid = valid[target]
     dtrain = xgb.DMatrix(X_train[features], y_train)
@@ -189,7 +189,7 @@ def run_single(train, test, valid, features, target, random_state=0):
     imp = get_importance(gbm, features)
     print('Importance array:\n{}'.format(imp))
 
-    print("Predict test set...")
+    print("Predict test dataset...")
     test_prediction = gbm.predict(xgb.DMatrix(test[features]), ntree_limit=gbm.best_iteration+1)
 
     print('Training time: {} minutes'.format(round((time.time() - start_time)/60, 2)))
@@ -250,7 +250,7 @@ def run_kfold(nfolds, train, test, features, target, random_state=0):
         imp = get_importance(gbm, features)
         print('Importance array: ', imp)
 
-        print("Predict test set...")
+        print("Predict test dataset...")
         test_prediction = gbm.predict(xgb.DMatrix(X_test), ntree_limit=gbm.best_iteration+1)
         yfull_test['kfold_' + str(num_fold)] = test_prediction
 
@@ -272,24 +272,40 @@ def run_kfold(nfolds, train, test, features, target, random_state=0):
     return yfull_test['mean'].values, score
 
 
-def create_submission(score, test, prediction, model, importance):
+def merge_with_leak(prediction,averaged=True):
+    print('Merging with leak dataset...')
+    leak = pd.read_csv('../output/leak_predictions_NA.csv')
+    leak['pred'] = prediction
+    # to average over group_1 and act_date or not
+    if averaged:
+        leak = pd.merge(leak,test[['activity_id','act_date','ppl_group_1']],\
+            on='activity_id',how='left')
+        leak['avg_pred'] = leak.groupby(['act_date','ppl_group_1'])\
+            ['pred'].transform('mean')
+        leak['outcome'] = leak['outcome'].fillna(leak['avg_pred'])
+    else:
+        leak['outcome'] = leak['outcome'].fillna(leak['pred'])
+    return leak.outcome.values
+
+def create_submission(score, test, pred, model, importance, averaged):
     now = datetime.datetime.now()
-    
-    mod_file = 'model_' + str(score) + '_' + str(now.strftime("%Y-%m-%d-%H-%M")) + '.model'
+    scrstr = "{:0.4f}_{}".format(score,now.strftime("%Y-%m-%d-%H-%M"))
+    mod_file = '../output/model_' + scrstr + '.model'
     print('Writing model: ', mod_file)
-    model.save_model('../output/'+mod_file)
-
-    imp_file = 'importance_' + str(score) + '_' + str(now.strftime("%Y-%m-%d-%H-%M")) + '.csv'
-    print('Writing importances: ', imp_file)
-    importance.to_csv('../output/'+imp_file)
-
-    sub_file = 'submission_' + str(score) + '_' + str(now.strftime("%Y-%m-%d-%H-%M")) + '.csv'
+    model.save_model(mod_file)
+    imp_file = '../output/imp_' + scrstr + '.csv'
+    print('Writing features: ', imp_file)
+    importance.to_csv(imp_file)
+    if averaged:
+        sub_file = '../output/submit_' + scrstr + '_avg.csv'
+    else:
+        sub_file = '../output/submit_' + scrstr + '.csv'
     print('Writing submission: ', sub_file)
-    f = open('../output/'+sub_file, 'w')
+    f = open(sub_file, 'w')
     f.write('activity_id,outcome\n')
     total = 0
     for id in test['activity_id']:
-        str1 = str(id) + ',' + str(prediction[total])
+        str1 = str(id) + ',' + str(pred[total])
         str1 += '\n'
         total += 1
         f.write(str1)
@@ -300,7 +316,10 @@ print('Length of train: ', len(train))
 print('Length of test: ', len(test))
 print('Features [{}]: {}'.format(len(features), sorted(features)))
 
-test_prediction, score, model, importance = run_single(train, test, crossval, features, 'outcome')
-# test_prediction, score = run_kfold(3, train, test, features, 'outcome')
-create_submission(score, test, test_prediction, model, importance)
-
+prediction, score, model, importance = run_single(train, test, crossval, features, 'outcome')
+# prediction, score = run_kfold(3, train, test, features, 'outcome')
+try:
+    pred = merge_with_leak(prediction, averaged=False)
+except:
+    print('Merge with leak dataset failed!')
+create_submission(score, test, pred, model, importance, averaged=False)
