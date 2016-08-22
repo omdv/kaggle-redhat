@@ -17,18 +17,14 @@ def intersect(a, b):
 
 # add derived features here
 def derive_features(train, test):
-    # create a small validation set - 0.5%
-    mask = np.random.rand(train.shape[0]) < 0.5/1.e2
-    crossval = train[mask]
-    train = train[~mask]
+    print("Derive new features...")
 
-    # 1. mean by various groups
+    # 1. DO NOT TURN ON
     # meanlist = [
     #     [['act_date'],'mean_by_act_date'],\
     #     [['ppl_date'],'mean_by_ppl_date'],\
     #     [['act_date','ppl_char_38'],'mean_by_ch38_act_date'],
     #     [['act_date','ppl_char_7'],'mean_by_ch7_act_date']]
-
     # for key in meanlist:
     #     basis = key[0]
     #     label = key[1]
@@ -38,13 +34,40 @@ def derive_features(train, test):
     #     test = pd.merge(test,mean_outcome,on=basis,how='left')
     #     crossval = pd.merge(crossval,mean_outcome,on=basis,how='left')
 
-    # # 2. median outcome by activity date and people group in training
+    # # 2. DO NOT TURN ON
     # basis = ['act_date','ppl_group_1']
     # median_outcome = train.groupby(basis).agg({'outcome':np.nanmedian}).reset_index()
     # median_outcome = median_outcome.rename(columns={'outcome':'median_by_grp_act_date'})
     # train = pd.merge(train,median_outcome,on=basis,how='left')
     # test = pd.merge(test,median_outcome,on=basis,how='left')
     # crossval = pd.merge(crossval,median_outcome,on=basis,how='left')
+
+    # 3. merge top 3 features
+    tomerge = [\
+        ['ppl_group_1','ppl_char_7','ppl_grp1_char7'],
+        ['ppl_group_1','ppl_char_38','ppl_grp1_char38'],
+        ['ppl_group_1','ppl_char_6','ppl_grp1_char6'],
+        ['ppl_char_38','ppl_char_7','ppl_char38_char7'],
+        ['ppl_char_38','ppl_char_6','ppl_char38_char6']
+    ]
+    for feat in tomerge:
+        train['foo1'] = train[feat[0]].astype('str')
+        train['foo2'] = train[feat[1]].astype('str')
+        train[feat[2]] = train['foo1'] + train['foo2']
+        train[feat[2]] = train[feat[2]].astype(np.int32)
+
+        test['foo1'] = test[feat[0]].astype('str')
+        test['foo2'] = test[feat[1]].astype('str')
+        test[feat[2]] = test['foo1'] + test['foo2']
+        test[feat[2]] = test[feat[2]].astype(np.int32)
+
+    del train['foo1'], train['foo2']
+    del test['foo1'], test['foo2']
+
+    # create a small validation set - 0.5%
+    mask = np.random.rand(train.shape[0]) < 0.5/1.e2
+    crossval = train[mask]
+    train = train[~mask]
 
     return train, test, crossval
 
@@ -60,7 +83,7 @@ def get_features(train, test):
     return sorted(output)
 
 def read_test_train():
-    print("Read people.csv...")
+    print("Load people.csv...")
     people = pd.read_csv("../input/people.csv",
                        dtype={'people_id': np.str,
                               'activity_id': np.str,
@@ -80,7 +103,7 @@ def read_test_train():
                               'activity_id': np.str},
                        parse_dates=['date'])
 
-    print("Process tables...")
+    print("Pre-process tables...")
     for table in [train, test]:
         table['year'] = table['date'].dt.year
         table['month'] = table['date'].dt.month
@@ -131,7 +154,7 @@ def create_feature_map(features):
 
 
 def get_importance(gbm, features):
-    create_feature_map(features)
+    # create_feature_map(features)
 
     # importance = gbm.get_fscore(fmap='xgb.fmap')
     # importance = sorted(importance.items(), key=itemgetter(1), reverse=True)
@@ -161,7 +184,7 @@ def run_single(train, test, valid, features, target, random_state=0):
         "silent": 1,
         "seed": random_state,
     }
-    num_boost_round = 300
+    num_boost_round = 150
     early_stopping_rounds = 10
     test_size = 0.1
 
@@ -171,8 +194,8 @@ def run_single(train, test, valid, features, target, random_state=0):
 
     X_train = train
     X_valid = valid
-    print('Length of traininig:', len(X_train.index))
-    print('Length of validation:', len(X_valid.index))
+    print('Length of train:', len(X_train.index))
+    print('Length of valid:', len(X_valid.index))
     y_train = train[target]
     y_valid = valid[target]
     dtrain = xgb.DMatrix(X_train[features], y_train)
@@ -271,8 +294,8 @@ def run_kfold(nfolds, train, test, features, target, random_state=0):
     print('Training time: {} minutes'.format(round((time.time() - start_time)/60, 2)))
     return yfull_test['mean'].values, score
 
-
-def merge_with_leak(prediction,averaged=True):
+# Averaged option does not show good results on LB
+def merge_with_leak(prediction,averaged=False):
     print('Merging with leak dataset...')
     leak = pd.read_csv('../output/leak_predictions_NA.csv')
     leak['pred'] = prediction
