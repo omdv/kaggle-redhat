@@ -6,11 +6,10 @@ from sklearn.cross_validation import KFold
 from sklearn.cross_validation import train_test_split
 from sklearn.metrics import roc_auc_score
 import xgboost as xgb
-import random
 import time
 import copy
 
-random.seed(42)
+np.random.seed(42)
 
 def intersect(a, b):
     return list(set(a) & set(b))
@@ -64,8 +63,8 @@ def derive_features(train, test):
     del train['foo1'], train['foo2']
     del test['foo1'], test['foo2']
 
-    # create a small validation set - 0.5%
-    mask = np.random.rand(train.shape[0]) < 0.5/1.e2
+    # create a small validation set - 0.2%
+    mask = np.random.rand(train.shape[0]) < 0.2/1.e2
     crossval = train[mask]
     train = train[~mask]
 
@@ -218,6 +217,9 @@ def run_single(train, test, valid, features, target, random_state=0):
     print('Training time: {} minutes'.format(round((time.time() - start_time)/60, 2)))
     return test_prediction.tolist(), score, gbm, imp
 
+#TODO grid search CV
+def grid_search_CV():
+    return 0
 
 def run_kfold(nfolds, train, test, features, target, random_state=0):
     eta = 0.1

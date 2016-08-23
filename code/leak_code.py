@@ -19,20 +19,20 @@ def interpolateFun0(x):
         x['filled'] = g ## Will be replaced by a mean.
         return x
     missing_index = g.isnull()
-    borders = np.append([g.index[0]], g[~missing_index].index, axis=0)
-    borders = np.append(borders, [g.index[-1]+1], axis=0)
-    forward_border = borders[1:]
-    backward_border = borders[:-1]
-    forward_border_g = g[forward_border]
-    backward_border_g = g[backward_border]
+    borders = np.append([g.index[0]], g[~missing_index].index, axis=0) #coordinates of non-missing
+    borders = np.append(borders, [g.index[-1]+1], axis=0) #add the last coordinate
+    forward_border = borders[1:] #everything except first
+    backward_border = borders[:-1] #everything except last
+    forward_border_g = g[forward_border] #now taking non-empty g-values
+    backward_border_g = g[backward_border] #non-empty g-values
     ## Interpolate borders.
     ## TODO: Why does the script author use the value 0.1?
-    border_fill = 0.1
+    border_fill = 0.0 #0.1 in original script subtract this value from edge values
     forward_border_g[forward_border_g.index[-1]] = abs(forward_border_g[forward_border_g.index[-2]]-border_fill)
     backward_border_g[backward_border_g.index[0]] = abs(forward_border_g[forward_border_g.index[0]]-border_fill)
-    times = forward_border-backward_border
-    forward_x_fill = np.repeat(forward_border_g, times).reset_index(drop=True)
-    backward_x_fill = np.repeat(backward_border_g, times).reset_index(drop=True)
+    times = forward_border-backward_border #days between non-missing values
+    forward_x_fill = np.repeat(forward_border_g, times).reset_index(drop=True) #fill from back to first non-missing
+    backward_x_fill = np.repeat(backward_border_g, times).reset_index(drop=True) #fill from front to first non-missing
     vec = (forward_x_fill+backward_x_fill)/2
     g[missing_index] = vec[missing_index] ## Impute missing values only.
     x['filled'] = g
