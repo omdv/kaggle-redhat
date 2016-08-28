@@ -42,26 +42,26 @@ def derive_features(train, test):
     # crossval = pd.merge(crossval,median_outcome,on=basis,how='left')
 
     # 3. merge top 3 features
-    tomerge = [\
-        ['ppl_group_1','ppl_char_7','ppl_grp1_char7'],
-        ['ppl_group_1','ppl_char_38','ppl_grp1_char38'],
-        ['ppl_group_1','ppl_char_6','ppl_grp1_char6'],
-        ['ppl_char_38','ppl_char_7','ppl_char38_char7'],
-        ['ppl_char_38','ppl_char_6','ppl_char38_char6']
-    ]
-    for feat in tomerge:
-        train['foo1'] = train[feat[0]].astype('str')
-        train['foo2'] = train[feat[1]].astype('str')
-        train[feat[2]] = train['foo1'] + train['foo2']
-        train[feat[2]] = train[feat[2]].astype(np.int32)
+    # tomerge = [\
+    #     ['ppl_group_1','ppl_char_7','ppl_grp1_char7'],
+    #     ['ppl_group_1','ppl_char_38','ppl_grp1_char38'],
+    #     ['ppl_group_1','ppl_char_6','ppl_grp1_char6'],
+    #     ['ppl_char_38','ppl_char_7','ppl_char38_char7'],
+    #     ['ppl_char_38','ppl_char_6','ppl_char38_char6']
+    # ]
+    # for feat in tomerge:
+    #     train['foo1'] = train[feat[0]].astype('str')
+    #     train['foo2'] = train[feat[1]].astype('str')
+    #     train[feat[2]] = train['foo1'] + train['foo2']
+    #     train[feat[2]] = train[feat[2]].astype(np.int32)
 
-        test['foo1'] = test[feat[0]].astype('str')
-        test['foo2'] = test[feat[1]].astype('str')
-        test[feat[2]] = test['foo1'] + test['foo2']
-        test[feat[2]] = test[feat[2]].astype(np.int32)
+    #     test['foo1'] = test[feat[0]].astype('str')
+    #     test['foo2'] = test[feat[1]].astype('str')
+    #     test[feat[2]] = test['foo1'] + test['foo2']
+    #     test[feat[2]] = test[feat[2]].astype(np.int32)
 
-    del train['foo1'], train['foo2']
-    del test['foo1'], test['foo2']
+    # del train['foo1'], train['foo2']
+    # del test['foo1'], test['foo2']
 
     # create a small validation set - 0.2%
     mask = np.random.rand(train.shape[0]) < 0.2/1.e2
@@ -116,7 +116,6 @@ def read_test_train():
     people['year'] = people['date'].dt.year
     people['month'] = people['date'].dt.month
     people['day'] = people['date'].dt.day
-    # people.drop('date', axis=1, inplace=True)
     people['group_1'] = people['group_1'].str.lstrip('group ').astype(np.int32)
     for i in range(1, 10):
         people['char_' + str(i)] = people['char_' + str(i)].str.lstrip('type ').astype(np.int32)
@@ -164,10 +163,11 @@ def get_importance(gbm, features):
 
 
 def run_single(train, test, valid, features, target, random_state=0):
-    eta = 0.2
-    max_depth = 6
-    subsample = 0.8
-    colsample_bytree = 0.8
+    eta = 0.02
+    max_depth = 10
+    subsample = 0.7
+    colsample_bytree = 0.7
+    min_child_weight = 0
     start_time = time.time()
 
     print('XGBoost params. ETA: {}, MAX_DEPTH: {}, SUBSAMPLE: {}, COLSAMPLE_BY_TREE: {}'.format(eta, max_depth, subsample, colsample_bytree))
@@ -178,6 +178,7 @@ def run_single(train, test, valid, features, target, random_state=0):
         "eta": eta,
         "tree_method": 'exact',
         "max_depth": max_depth,
+        "min_child_weight": min_child_weight,
         "subsample": subsample,
         "colsample_bytree": colsample_bytree,
         "silent": 1,
