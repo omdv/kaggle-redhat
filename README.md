@@ -10,3 +10,6 @@ Ideas:
 ## Code description
 * kaggle-redhat-xgboost - xgboost script to predict traditionally
 * leak_code.py - python script from Kaggle forum to exploit the leak
+
+## Results - xgboost only
+* 0.9554 with max_depth = 10, min_child_weight = 9 and 150 rounds
