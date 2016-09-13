@@ -88,6 +88,8 @@ cat(Sys.time())
 cat("Making sparse data (1)\n")
 
 # derived features
+D$act_workday = as.POSIXlt(as.Date(D$date))$wday
+D$ppl_workday = as.POSIXlt(as.Date(D$people_date))$wday
 D$group1char38 = as.numeric(paste(D$people_group_1, D$people_char_38, sep=""))
 D$group1char7 = as.numeric(paste(D$people_group_1, D$people_char_7, sep=""))
 D$group1char9 = as.numeric(paste(D$people_group_1, D$people_char_9, sep=""))
@@ -96,7 +98,7 @@ D$char38char7 = as.numeric(paste(D$people_char_38, D$people_char_7, sep=""))
 
 D.sparse=
   cBind(sparseMatrix(D$i,D$activity_category),
-        sparseMatrix(D$i,D$people_group_1),
+        #sparseMatrix(D$i,D$people_group_1),
         sparseMatrix(D$i,D$char_1),
         sparseMatrix(D$i,D$char_2),
         sparseMatrix(D$i,D$char_3),
@@ -150,12 +152,9 @@ D.sparse=
         D$people_char_35,
         D$people_char_36,
         D$people_char_37,
-        D$people_char_38,
-        D$group1char38,
-        D$group1char7,
-        D$group1char9,
-        D$group1char10,
-        D$char38char7)
+        D$people_char_38)
+        #D$ppl_workday,
+        #D$act_workday)
 
 
 cat(Sys.time())

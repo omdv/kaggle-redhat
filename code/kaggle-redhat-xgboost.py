@@ -6,6 +6,7 @@ from sklearn.cross_validation import KFold
 from sklearn.cross_validation import train_test_split
 from sklearn.grid_search import GridSearchCV
 from sklearn.metrics import roc_auc_score
+from sklearn.preprocessing import OneHotEncoder
 import xgboost as xgb
 import time
 import copy
@@ -16,7 +17,7 @@ def intersect(a, b):
     return list(set(a) & set(b))
 
 # add derived features here
-def derive_features(train, test, valsize):
+def derive_features(train, test):
     print("Derive new features...")
 
     # 1. DO NOT TURN ON
@@ -64,13 +65,7 @@ def derive_features(train, test, valsize):
     # del train['foo1'], train['foo2']
     # del test['foo1'], test['foo2']
 
-    # create a small validation set - unique people id
-    mask = np.random.rand(train.people_id.unique().shape[0]) < valsize/1.e2
-    mask = train.people_id.unique()[mask]
-    crossval = train[train.people_id.isin(mask)]
-    train = train[~train.people_id.isin(mask)]
-
-    return train, test, crossval
+    return train, test
 
 
 def get_features(train, test):
@@ -81,15 +76,11 @@ def get_features(train, test):
     output.remove('activity_id')
     output.remove('act_date')
     output.remove('ppl_date')
-    output.remove('ppl_group_1')
+    output.remove('act_char_10')
+    # output.remove('ppl_group_1')
     return sorted(output)
 
-
-def get_dummies_and_sparse(train,test):
-    return train,test
-
-# valsize - size of crossval set in %
-def read_test_train(valsize):
+def read_test_train():
     print("Load people.csv...")
     people = pd.read_csv("../input/people.csv",
                        dtype={'people_id': np.str,
@@ -112,18 +103,23 @@ def read_test_train(valsize):
 
     print("Pre-process tables...")
     for table in [train, test]:
-        table['year'] = table['date'].dt.year
-        table['month'] = table['date'].dt.month
-        table['day'] = table['date'].dt.day
+        # table['year'] = table['date'].dt.year.astype(np.int32)
+        # table['month'] = table['date'].dt.month.astype(np.int32)
+        # table['day'] = table['date'].dt.day.astype(np.int32)
+        # table['weekday'] = table['date'].dt.weekday.astype(np.int32)
+        # table['isweekend'] = (table['weekday'] >= 5).astype(np.int32)
         table['activity_category'] = table['activity_category'].str.lstrip('type ').astype(np.int32)
         for i in range(1, 11):
             cursor = 'char_' + str(i)
+            table[cursor].fillna('type 99999',inplace=True)
             table.loc[table[cursor].notnull(),cursor] = \
-                table.loc[table[cursor].notnull(),cursor].str.lstrip('type ').astype(np.int32)            # try:
+                table.loc[table[cursor].notnull(),cursor].str.lstrip('type ').astype(np.int32)
 
-    people['year'] = people['date'].dt.year
-    people['month'] = people['date'].dt.month
-    people['day'] = people['date'].dt.day
+    # people['year'] = people['date'].dt.year.astype(np.int32)
+    # people['month'] = people['date'].dt.month.astype(np.int32)
+    # people['day'] = people['date'].dt.day.astype(np.int32)
+    # people['weekday'] = people['date'].dt.weekday.astype(np.int32)
+    # people['isweekend'] = (people['weekday'] >= 5).astype(np.int32)
     people['group_1'] = people['group_1'].str.lstrip('group ').astype(np.int32)
     for i in range(1, 10):
         cursor = 'char_' + str(i)
@@ -134,7 +130,7 @@ def read_test_train(valsize):
         people.loc[people[cursor].notnull(),cursor] = \
             people.loc[people[cursor].notnull(),cursor].astype(np.int32)
 
-    print("Merge...")
+    print("Merge with people...")
     # rename features correspondingly
     people.columns = ['ppl_'+x if x not in ['people_id'] else x for x in people.columns]
     train.columns = ['act_'+x if x not in ['people_id','outcome','activity_id'] else x for x in train.columns]
@@ -143,80 +139,120 @@ def read_test_train(valsize):
     # merge
     train = pd.merge(train, people, how='left', on='people_id', left_index=True)
     test = pd.merge(test, people, how='left', on='people_id', left_index=True)
-    train.fillna(-999,inplace=True)
-    test.fillna(-999,inplace=True)
-
-    # derive new features here and create a cross-validation set out of train
-    train, test, crossval = derive_features(train, test, valsize)
-
-    # get intersection of features
-    features = get_features(train, test)
     
-    return train, test, crossval, features
+    return train, test
 
 
-def get_importance(gbm, features):
-    importance = pd.Series(gbm.get_fscore()).sort_values(ascending=False)
-    importance = importance/1.e-2/importance.values.sum()
-    return importance
+def run_single(train,test,features,target,valsize):
 
+    # creating sparse matrix
+    print('Creating sparse matrix...')
+    # train = train.drop_duplicates(features)
 
-def run_single(train, test, valid, features, target, random_state=0):
-    eta = 0.1
-    max_depth = 10
-    subsample = 0.7
-    colsample_bytree = 0.7
-    min_child_weight = 2
-    num_boost_round = 150
+    # create a small validation set - unique people id
+    if valsize > 0:
+        mask = np.random.rand(train.people_id.unique().shape[0]) < valsize/1.e2
+        mask = train.people_id.unique()[mask]
+        valid = train[train.people_id.isin(mask)]
+        train = train[~train.people_id.isin(mask)]
+        y_valid = valid[target]
+        valid = valid[features]
+    
+    y_train = train[target]
+    
+    # if not hot encoding - use these
+    # train = train[features]
+    # test = test[features]
+
+    # hot encode
+    enc = OneHotEncoder(handle_unknown='ignore',dtype='np.int32')
+    if valsize > 0:
+        enc.fit(pd.concat([train[features],test[features],valid[features]]))
+    else:
+        enc.fit(pd.concat([train[features],test[features]]))
+    train = enc.transform(train[features])
+    test = enc.transform(test[features])
+    if valsize > 0:
+        valid = enc.transform(valid[features])
+
+    dtrain = xgb.DMatrix(train, label = y_train)
+    dtest = xgb.DMatrix(test)
+
+    if valsize > 0:
+        dvalid = xgb.DMatrix(valid, label = y_valid)
+
+    print('Shape of train: {}'.format(train.shape))
+    print('Shape of test: {}'.format(test.shape))
+
+    # tree booster params
+    # num_boost_round = 150
+    # early_stopping_rounds = 10
+    # start_time = time.time()
+    # params = {
+    #     "objective": "binary:logistic",
+    #     "booster" : "gbtree",
+    #     "eval_metric": "auc",
+    #     "eta": 0.01,
+    #     "gamma": 0,
+    #     "tree_method": 'exact',
+    #     "max_depth": 10,
+    #     "min_child_weight": 2,
+    #     "subsample": 0.7,
+    #     "colsample_bytree": 0.7,
+    #     "silent": 1,
+    #     "seed": 42
+    # }
+
+    # linear booster params
+    num_boost_round = 10
     early_stopping_rounds = 10
-    test_size = 0.1
     start_time = time.time()
-
-    print('XGBoost params. ETA: {}, MAX_DEPTH: {}, SUBSAMPLE: {}, COLSAMPLE_BY_TREE: {}'.format(eta, max_depth, subsample, colsample_bytree))
     params = {
         "objective": "binary:logistic",
-        "booster" : "gbtree",
+        "booster" : "gblinear",
         "eval_metric": "auc",
-        "eta": eta,
-        "tree_method": 'exact',
-        "max_depth": max_depth,
-        "min_child_weight": min_child_weight,
-        "subsample": subsample,
-        "colsample_bytree": colsample_bytree,
+        "eta": 0.02,
+        "gamma": 0,
+        "max_depth": 10,
+        "min_child_weight": 0,
+        "subsample": 0.7,
+        "colsample_bytree": 0.7,
         "silent": 1,
-        "seed": random_state,
+        "seed": 42,
     }
 
-    # X_train, X_valid = train_test_split(train, test_size=test_size, random_state=random_state)
-    # print('Length train:', len(X_train.index))
-    # print('Length valid:', len(X_valid.index))
+    print('XGBoost params: {}'.format(params))
 
-    X_train = train
-    X_valid = valid
-    print('Length of train:', len(X_train.index))
-    print('Length of valid:', len(X_valid.index))
-    y_train = train[target]
-    y_valid = valid[target]
-    dtrain = xgb.DMatrix(X_train[features], label = y_train, missing = -999)
-    dvalid = xgb.DMatrix(X_valid[features], label = y_valid, missing = -999)
+    if valsize > 0:
+        watchlist = [(dtrain, 'train'), (dvalid,'valid')]
+    else:
+        watchlist = [(dtrain, 'train')]
 
-    watchlist = [(dtrain, 'train'), (dvalid, 'eval')]
     gbm = xgb.train(params, dtrain, num_boost_round, evals=watchlist,\
         early_stopping_rounds=early_stopping_rounds, verbose_eval=True)
 
     print("Validating...")
-    check = gbm.predict(xgb.DMatrix(X_valid[features]), ntree_limit=gbm.best_iteration+1)
-    score = roc_auc_score(X_valid[target].values, check)
+    if valsize > 0:
+        check = gbm.predict(dvalid) #, ntree_limit=gbm.best_iteration+1)
+        score = roc_auc_score(y_valid.values, check)
+    else:
+        check = gbm.predict(dtrain) #, ntree_limit=gbm.best_iteration+1)
+        score = roc_auc_score(y_train.values, check)
     print('Check error value: {:.6f}'.format(score))
 
     imp = get_importance(gbm, features)
     print('Importance array:\n{}'.format(imp))
 
     print("Predict test dataset...")
-    test_prediction = gbm.predict(xgb.DMatrix(test[features]), ntree_limit=gbm.best_iteration+1)
+    test_prediction = gbm.predict(dtest) #, ntree_limit=gbm.best_iteration+1)
 
     print('Training time: {} minutes'.format(round((time.time() - start_time)/60, 2)))
     return test_prediction.tolist(), score, gbm, imp
+
+def get_importance(gbm, features):
+    importance = pd.Series(gbm.get_fscore()).sort_values(ascending=False)
+    importance = importance/1.e-2/importance.values.sum()
+    return importance
 
 def grid_search_CV(X_train,y_train,X_valid,y_valid):
     print('Launching Grid Search CV...')
@@ -279,97 +315,14 @@ def grid_search_CV(X_train,y_train,X_valid,y_valid):
     #         # 'colsample_bytree': [0.6,0.8,1.0]},
     return grid_search_res
 
-def run_kfold(nfolds, train, test, features, target, random_state=0):
-    eta = 0.1
-    max_depth = 5
-    subsample = 0.8
-    colsample_bytree = 0.8
-    start_time = time.time()
-
-    print('XGBoost params. ETA: {}, MAX_DEPTH: {}, SUBSAMPLE: {}, COLSAMPLE_BY_TREE: {}'.format(eta, max_depth, subsample, colsample_bytree))
-    params = {
-        "objective": "binary:logistic",
-        "booster" : "gbtree",
-        "eval_metric": "auc",
-        "eta": eta,
-        "max_depth": max_depth,
-        "subsample": subsample,
-        "colsample_bytree": colsample_bytree,
-        "silent": 1,
-        "seed": random_state
-    }
-    num_boost_round = 50
-    early_stopping_rounds = 10
-
-    yfull_train = dict()
-    yfull_test = copy.deepcopy(test[['activity_id']].astype(object))
-    kf = KFold(len(train.index), n_folds=nfolds, shuffle=True, random_state=random_state)
-    num_fold = 0
-    for train_index, test_index in kf:
-        num_fold += 1
-        print('Start fold {} from {}'.format(num_fold, nfolds))
-        X_train, X_valid = train[features].as_matrix()[train_index], train[features].as_matrix()[test_index]
-        y_train, y_valid = train[target].as_matrix()[train_index], train[target].as_matrix()[test_index]
-        X_test = test[features].as_matrix()
-
-        print('Length train:', len(X_train))
-        print('Length valid:', len(X_valid))
-
-        dtrain = xgb.DMatrix(X_train, y_train)
-        dvalid = xgb.DMatrix(X_valid, y_valid)
-
-        watchlist = [(dtrain, 'train'), (dvalid, 'eval')]
-        gbm = xgb.train(params, dtrain, num_boost_round, evals=watchlist,\
-            early_stopping_rounds=early_stopping_rounds, verbose_eval=True)
-        
-        print("Validating...")
-        yhat = gbm.predict(xgb.DMatrix(X_valid), ntree_limit=gbm.best_iteration+1)
-        score = roc_auc_score(y_valid.tolist(), yhat)
-        print('Check error value: {:.6f}'.format(score))
-
-        # Each time store portion of precicted data in train predicted values
-        for i in range(len(test_index)):
-            yfull_train[test_index[i]] = yhat[i]
-
-        imp = get_importance(gbm, features)
-        print('Importance array: ', imp)
-
-        print("Predict test dataset...")
-        test_prediction = gbm.predict(xgb.DMatrix(X_test),\
-            ntree_limit=gbm.best_iteration+1)
-        yfull_test['kfold_' + str(num_fold)] = test_prediction
-
-    # Copy dict to list
-    train_res = []
-    for i in sorted(yfull_train.keys()):
-        train_res.append(yfull_train[i])
-
-    score = roc_auc_score(train[target], np.array(train_res))
-    print('Check error value: {:.6f}'.format(score))
-
-    # Find mean for KFolds on test
-    merge = []
-    for i in range(1, nfolds+1):
-        merge.append('kfold_' + str(i))
-    yfull_test['mean'] = yfull_test[merge].mean(axis=1)
-
-    print('Training time: {} minutes'.format(round((time.time() - start_time)/60, 2)))
-    return yfull_test['mean'].values, score
-
-# Averaged option does not show good results on LB
-def merge_with_leak(prediction,averaged=False):
+def merge_with_leak(prediction):
     print('Merging with leak dataset...')
     leak = pd.read_csv('../output/leak_predictions_NA.csv')
     leak['pred'] = prediction
-    # to average over group_1 and act_date or not
-    if averaged:
-        leak = pd.merge(leak,test[['activity_id','act_date','ppl_group_1']],\
-            on='activity_id',how='left')
-        leak['avg_pred'] = leak.groupby(['act_date','ppl_group_1'])\
-            ['pred'].transform('mean')
-        leak['outcome'] = leak['outcome'].fillna(leak['avg_pred'])
-    else:
-        leak['outcome'] = leak['outcome'].fillna(leak['pred'])
+    # resetting 0.5 to nan to use xgboost
+    leak.loc[leak.outcome == 0.5, 'outcome'] = np.nan
+    print('Number of missing values: {}'.format(leak[leak.outcome.isnull()].shape[0]))
+    leak['outcome'] = leak['outcome'].fillna(leak['pred'])
     return leak.outcome.values
 
 def create_submission(score, test, pred, model, importance, averaged):
@@ -396,21 +349,24 @@ def create_submission(score, test, pred, model, importance, averaged):
         f.write(str1)
     f.close()
 
-train, test, crossval, features = read_test_train(10.)
-print('Length of train: ', len(train))
-print('Length of test: ', len(test))
-print('Features [{}]: {}'.format(len(features), sorted(features)))
+if __name__ == '__main__':
+    train, test = read_test_train()
+    train, test = derive_features(train, test)
+    features = get_features(train, test)
 
-grid = grid_search_CV(train[features],train['outcome'],\
-    crossval[features],crossval['outcome'])
+    print('Shape of train: {}'.format(train.shape))
+    print('Shape of test: {}'.format(test.shape))
+    print('Features [{}]: {}'.format(len(features), sorted(features)))
 
-# prediction, score, model, importance = run_single(train, test, crossval, features, 'outcome')
-# # prediction, score = run_kfold(3, train, test, features, 'outcome')
+    prediction, score, model, importance = run_single(train,test,features,'outcome',0)
+    # # # prediction, score = run_kfold(3, train, test, features, 'outcome')
+    # # grid = grid_search_CV(train[features],train['outcome'],\
+    # #     crossval[features],crossval['outcome'])
 
-# try:
-#     pred = merge_with_leak(prediction, averaged=False)
-# except:
-#     print('Merge with leak dataset failed!')
+    try:
+        pred = merge_with_leak(prediction)
+    except:
+        print('Merge with leak dataset failed!')
 
-# pred = prediction
-# create_submission(score, test, pred, model, importance, averaged=False)
+    # pred = prediction
+    create_submission(score, test, pred, model, importance, averaged=False)
