@@ -165,7 +165,28 @@ def run_single(train,test,features,target,valsize):
     # test = test[features]
 
     # hot encode
-    enc = OneHotEncoder(handle_unknown='ignore',dtype='np.int32')
+
+    X = pd.concat([train[features],test[features]])
+
+    categorical=['group_1','activity_category','act_char_1','act_char_2','act_char_3',
+        'act_char_4','act_char_5','act_char_6','act_char_7','act_char_8','act_char_9',
+        'ppl_char_2','ppl_char_3','ppl_char_4','ppl_char_5','ppl_char_6','ppl_char_7',
+        'ppl_char_8','ppl_char_9']
+    not_categorical=[]
+    for category in .columns:
+        if category not in categorical:
+            not_categorical.append(category)
+
+enc = OneHotEncoder(handle_unknown='ignore')
+enc=enc.fit(pd.concat([X[categorical],X_test[categorical]]))
+X_cat_sparse=enc.transform(X[categorical])
+X_test_cat_sparse=enc.transform(X_test[categorical])
+
+from scipy.sparse import hstack
+X_sparse=hstack((X[not_categorical], X_cat_sparse))
+X_test_sparse=hstack((X_test[not_categorical], X_test_cat_sparse))
+
+    enc = OneHotEncoder(handle_unknown='ignore',dtype=np.int32)
     if valsize > 0:
         enc.fit(pd.concat([train[features],test[features],valid[features]]))
     else:
@@ -351,6 +372,8 @@ def create_submission(score, test, pred, model, importance, averaged):
 
 if __name__ == '__main__':
     train, test = read_test_train()
+    train = train.iloc[0:10,]
+    test = test.iloc[0:10,]
     train, test = derive_features(train, test)
     features = get_features(train, test)
 
@@ -363,10 +386,10 @@ if __name__ == '__main__':
     # # grid = grid_search_CV(train[features],train['outcome'],\
     # #     crossval[features],crossval['outcome'])
 
-    try:
-        pred = merge_with_leak(prediction)
-    except:
-        print('Merge with leak dataset failed!')
+    # try:
+    #     pred = merge_with_leak(prediction)
+    # except:
+    #     print('Merge with leak dataset failed!')
 
     # pred = prediction
-    create_submission(score, test, pred, model, importance, averaged=False)
+    # create_submission(score, test, pred, model, importance, averaged=False)

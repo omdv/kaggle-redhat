@@ -37,18 +37,18 @@ people$people_group_1[people$people_group_1 %in% names(which(table(people$people
 
 
 #reducing char_10 dimension
-#unique.char_10=
+# unique.char_10=
 #  rbind(
 #    select(train,people_id,char_10),
-#    select(test,people_id,char_10)) %>% group_by(char_10) %>% 
-#  summarize(n=n_distinct(people_id)) %>% 
-#  filter(n==1) %>% 
+#    select(test,people_id,char_10)) %>% group_by(char_10) %>%
+#  summarize(n=n_distinct(people_id)) %>%
+#  filter(n==1) %>%
 #  select(char_10) %>%
-#  as.matrix() %>% 
+#  as.matrix() %>%
 #  as.vector()
-
-#train$char_10[train$char_10 %in% unique.char_10]='type unique'
-#test$char_10[test$char_10 %in% unique.char_10]='type unique'
+#
+# train$char_10[train$char_10 %in% unique.char_10]='type unique'
+# test$char_10[test$char_10 %in% unique.char_10]='type unique'
 
 d1 <- merge(train, people, by = "people_id", all.x = T)
 d2 <- merge(test, people, by = "people_id", all.x = T)
@@ -63,14 +63,14 @@ D$i=1:dim(D)[1]
 
 
 ###uncomment this for CV run
-#set.seed(120)
-#unique_p <- unique(d1$people_id)
-#valid_p  <- unique_p[sample(1:length(unique_p), 40000)]
-#valid <- which(d1$people_id %in% valid_p)
-#model <- (1:length(d1$people_id))[-valid]
-
-test_activity_id=test$activity_id
-rm(train,test,d1,d2);gc(verbose=FALSE)
+# set.seed(120)
+# unique_p <- unique(d1$people_id)
+# valid_p  <- unique_p[sample(1:length(unique_p), 40000)]
+# valid <- which(d1$people_id %in% valid_p)
+# model <- (1:length(d1$people_id))[-valid]
+#
+# test_activity_id=test$activity_id
+# rm(train,test,d1,d2);gc(verbose=FALSE)
 
 
 char.cols=c('activity_category','people_group_1',
@@ -90,15 +90,15 @@ cat("Making sparse data (1)\n")
 # derived features
 D$act_workday = as.POSIXlt(as.Date(D$date))$wday
 D$ppl_workday = as.POSIXlt(as.Date(D$people_date))$wday
-D$group1char38 = as.numeric(paste(D$people_group_1, D$people_char_38, sep=""))
-D$group1char7 = as.numeric(paste(D$people_group_1, D$people_char_7, sep=""))
-D$group1char9 = as.numeric(paste(D$people_group_1, D$people_char_9, sep=""))
-D$group1char10 = as.numeric(paste(D$people_group_1, D$people_char_10, sep=""))
-D$char38char7 = as.numeric(paste(D$people_char_38, D$people_char_7, sep=""))
+# D$group1char38 = as.numeric(paste(D$people_group_1, D$people_char_38, sep=""))
+# D$group1char7 = as.numeric(paste(D$people_group_1, D$people_char_7, sep=""))
+# D$group1char9 = as.numeric(paste(D$people_group_1, D$people_char_9, sep=""))
+# D$group1char10 = as.numeric(paste(D$people_group_1, D$people_char_10, sep=""))
+# D$char38char7 = as.numeric(paste(D$people_char_38, D$people_char_7, sep=""))
 
 D.sparse=
   cBind(sparseMatrix(D$i,D$activity_category),
-        #sparseMatrix(D$i,D$people_group_1),
+        sparseMatrix(D$i,D$people_group_1),
         sparseMatrix(D$i,D$char_1),
         sparseMatrix(D$i,D$char_2),
         sparseMatrix(D$i,D$char_3),
@@ -152,9 +152,9 @@ D.sparse=
         D$people_char_35,
         D$people_char_36,
         D$people_char_37,
-        D$people_char_38)
-        #D$ppl_workday,
-        #D$act_workday)
+        D$people_char_38,
+        D$ppl_workday,
+        D$act_workday)
 
 
 cat(Sys.time())
@@ -210,9 +210,9 @@ cat("File size of test in SVMLight: ", file.size("dtest.data.zip"), "\n", sep = 
 gc(verbose=FALSE)
 
 
-param <- list(objective = "binary:logistic", 
+param <- list(objective = "binary:logistic",
               eval_metric = "auc",
-              booster = "gblinear", 
+              booster = "gblinear",
               eta = 0.02,
               subsample = 0.7,
               colsample_bytree = 0.7,
@@ -220,12 +220,12 @@ param <- list(objective = "binary:logistic",
               max_depth = 10)
 
 ###uncomment this for CV run
+
+# dmodel  <- xgb.DMatrix(train.sparse[model, ], label = Y[model])
+# dvalid  <- xgb.DMatrix(train.sparse[valid, ], label = Y[valid])
 #
-#dmodel  <- xgb.DMatrix(train.sparse[model, ], label = Y[model])
-#dvalid  <- xgb.DMatrix(train.sparse[valid, ], label = Y[valid])
-#
-#set.seed(120)
-#m1 <- xgb.train(data = dmodel
+# set.seed(120)
+# m1 <- xgb.train(data = dmodel
 #                , param
 #                , nrounds = 500
 #                , watchlist = list(valid = dvalid, model = dmodel)
@@ -241,8 +241,8 @@ cat(Sys.time())
 cat("XGBoost\n")
 
 set.seed(120)
-m2 <- xgb.train(data = dtrain, 
-                param, nrounds = 305,
+m2 <- xgb.train(data = dtrain,
+                param, nrounds = 10,
                 watchlist = list(train = dtrain),
                 print_every_n = 101)
 
@@ -253,7 +253,7 @@ cat("Predicting on test data\n")
 # Predict
 out <- predict(m2, dtest)
 sub <- data.frame(activity_id = test_activity_id, outcome = out)
-write.csv(sub, file = "model_sub.csv", row.names = F)
+write.csv(sub, file = "model_short.csv", row.names = F)
 
 #0.98035
 
@@ -263,165 +263,175 @@ gc(verbose=FALSE)
 
 
 
-## Leak from Loiso (0.987)
-
-cat(Sys.time())
-cat("Doing Loiso's magic leak\n")
-
-cat("Working on people\n")
-# load and transform people data ------------------------------------------
-ppl <- fread("../input/people.csv")
-
-### Recode logic to numeric
-p_logi <- names(ppl)[which(sapply(ppl, is.logical))]
-
-for (col in p_logi) {
-  set(ppl, j = col, value = as.numeric(ppl[[col]]))
-}
-rm(p_logi)
-
-### transform date
-ppl[,date := as.Date(as.character(date), format = "%Y-%m-%d")]
-
-# load activities ---------------------------------------------------------
-
-cat("Working on data\n")
-# read and combine
-activs <- fread("../input/act_train.csv")
-TestActivs <- fread("../input/act_test.csv")
-TestActivs$outcome <- NA
-activs <- rbind(activs,TestActivs)
-rm(TestActivs)
-
-cat("Merging\n")
-# Extract only required variables
-activs <- activs[, c("people_id","outcome","activity_id","date"), with = F]
-
-# Merge people data into actvitities
-d1 <- merge(activs, ppl, by = "people_id", all.x = T)
-
-# Remember, remember the 5th of November and which is test
-testset <- which(ppl$people_id %in% d1$people_id[is.na(d1$outcome)])
-d1[, activdate := as.Date(as.character(date.x), format = "%Y-%m-%d")]
-
-rm(activs)
-
-# prepare grid for prediction ---------------------------------------------
-
-cat("Creating interaction\n")
-# Create all group_1/day grid
-minactivdate <- min(d1$activdate)
-maxactivdate <- max(d1$activdate)
-alldays <- seq(minactivdate, maxactivdate, "day")
-allCompaniesAndDays <- data.table(
-  expand.grid(unique(
-    d1$group_1[!d1$people_id %in% ppl$people_id[testset]]), alldays
-  )
-)
-
-
-## Nicer names
-colnames(allCompaniesAndDays) <- c("group_1","date.p")
-
-## sort it
-setkey(allCompaniesAndDays,"group_1","date.p")
-
-## What are values on days where we have data?
-meanbycomdate <- d1[
-  !d1$people_id %in% ppl$people_id[testset],
-  mean(outcome),
-  by = c("group_1","activdate")
-  ]
-
-## Add them to full data grid
-allCompaniesAndDays <- merge(
-  allCompaniesAndDays,
-  meanbycomdate,
-  by.x = c("group_1","date.p"), by.y = c("group_1","activdate"),
-  all.x = T
-)
-
-
-# design function to interpolate unknown values ---------------------------
-
-interpolateFun <- function(x){
-  
-  # Find all non-NA indexes, combine them with outside borders
-  borders <- c(1, which(!is.na(x)), length(x) + 1)
-  # establish forward and backward - looking indexes
-  forward_border <- borders[2:length(borders)]
-  backward_border <- borders[1:(length(borders) - 1)]
-  
-  # prepare vectors for filling
-  forward_border_x <- x[forward_border]
-  forward_border_x[length(forward_border_x)] <- abs(
-    forward_border_x[length(forward_border_x) - 1] - 0.1
-  ) 
-  backward_border_x <- x[backward_border]
-  backward_border_x[1] <- abs(forward_border_x[1] - 0.1)
-  
-  # generate fill vectors
-  forward_x_fill <- rep(forward_border_x, forward_border - backward_border)
-  backward_x_fill <- rep(backward_border_x, forward_border - backward_border)
-  forward_x_fill_2 <- rep(forward_border, forward_border - backward_border) - 
-    1:length(forward_x_fill)
-  backward_x_fill_2 <- 1:length(forward_x_fill) -
-    rep(backward_border, forward_border - backward_border)
-  
-  #linear interpolation
-  vec <- (forward_x_fill + backward_x_fill)/2
-  
-  x[is.na(x)] <- vec[is.na(x)]
-  return(x)
-}
-
-
-# apply and submit --------------------------------------------------------
-
-cat("Applying interaction interpolation\n")
-allCompaniesAndDays[, filled := interpolateFun(V1), by = "group_1"]
-
-d1 <- merge(
-  d1,
-  allCompaniesAndDays,
-  all.x = T,all.y = F,
-  by.x = c("group_1","activdate"),
-  by.y = c("group_1","date.p")
-)
-
-
-cat("Predicting leak\n")
-## Create prediction file and write
-testsetdt <- d1[
-  d1$people_id %in% ppl$people_id[testset],
-  c("activity_id","filled"), with = F
-  ]
-
-cat("There are ", sum(is.na(testsetdt$filled)), " unknown observations.\nThere are ", length(testsetdt[testsetdt$filled == 0.5, filled]), " uncertain observations (equal to 0.5 - anokas' idea).\n", sep = "")
-cat("Adjusting leak with NA when unsure using anokas' idea (0.5 leakage => raddar's)\n")
-testsetdt[testsetdt$filled == 0.5, "filled"] <- NA
-cat("There are now in total ", sum(is.na(testsetdt$filled)), " unknown observations.\n", sep = "")
-
-write.csv(testsetdt,"Submission.csv", row.names = FALSE)
-
-cat("Cleaning up...\n")
-remove(list = ls())
-gc(verbose=FALSE)
-
-
-
-## Combo
-
-# Not elegant but fast enough for our taste, could go sqldf one-liner >_>
+# ## Leak from Loiso (0.987)
+# 
+# cat(Sys.time())
+# cat("Doing Loiso's magic leak\n")
+# 
+# cat("Working on people\n")
+# # load and transform people data ------------------------------------------
+# ppl <- fread("../input/people.csv")
+# 
+# ### Recode logic to numeric
+# p_logi <- names(ppl)[which(sapply(ppl, is.logical))]
+# 
+# for (col in p_logi) {
+#   set(ppl, j = col, value = as.numeric(ppl[[col]]))
+# }
+# rm(p_logi)
+# 
+# ### transform date
+# ppl[,date := as.Date(as.character(date), format = "%Y-%m-%d")]
+# 
+# # load activities ---------------------------------------------------------
+# 
+# cat("Working on data\n")
+# # read and combine
+# activs <- fread("../input/act_train.csv")
+# TestActivs <- fread("../input/act_test.csv")
+# TestActivs$outcome <- NA
+# activs <- rbind(activs,TestActivs)
+# rm(TestActivs)
+# 
+# cat("Merging\n")
+# # Extract only required variables
+# activs <- activs[, c("people_id","outcome","activity_id","date"), with = F]
+# 
+# # Merge people data into actvitities
+# d1 <- merge(activs, ppl, by = "people_id", all.x = T)
+# 
+# # Remember, remember the 5th of November and which is test
+# testset <- which(ppl$people_id %in% d1$people_id[is.na(d1$outcome)])
+# d1[, activdate := as.Date(as.character(date.x), format = "%Y-%m-%d")]
+# 
+# rm(activs)
+# 
+# # prepare grid for prediction ---------------------------------------------
+# 
+# cat("Creating interaction\n")
+# # Create all group_1/day grid
+# minactivdate <- min(d1$activdate)
+# maxactivdate <- max(d1$activdate)
+# alldays <- seq(minactivdate, maxactivdate, "day")
+# allCompaniesAndDays <- data.table(
+#   expand.grid(unique(
+#     d1$group_1[!d1$people_id %in% ppl$people_id[testset]]), alldays
+#   )
+# )
+# 
+# 
+# ## Nicer names
+# colnames(allCompaniesAndDays) <- c("group_1","date.p")
+# 
+# ## sort it
+# setkey(allCompaniesAndDays,"group_1","date.p")
+# 
+# ## What are values on days where we have data?
+# meanbycomdate <- d1[
+#   !d1$people_id %in% ppl$people_id[testset],
+#   mean(outcome),
+#   by = c("group_1","activdate")
+#   ]
+# 
+# ## Add them to full data grid
+# allCompaniesAndDays <- merge(
+#   allCompaniesAndDays,
+#   meanbycomdate,
+#   by.x = c("group_1","date.p"), by.y = c("group_1","activdate"),
+#   all.x = T
+# )
+# 
+# 
+# # design function to interpolate unknown values ---------------------------
+# 
+# interpolateFun <- function(x){
+# 
+#   # Find all non-NA indexes, combine them with outside borders
+#   borders <- c(1, which(!is.na(x)), length(x) + 1)
+#   # establish forward and backward - looking indexes
+#   forward_border <- borders[2:length(borders)]
+#   backward_border <- borders[1:(length(borders) - 1)]
+# 
+#   # prepare vectors for filling
+#   forward_border_x <- x[forward_border]
+#   forward_border_x[length(forward_border_x)] <- abs(
+#     forward_border_x[length(forward_border_x) - 1] - 0.1
+#   )
+#   backward_border_x <- x[backward_border]
+#   backward_border_x[1] <- abs(forward_border_x[1] - 0.1)
+# 
+#   # generate fill vectors
+#   forward_x_fill <- rep(forward_border_x, forward_border - backward_border)
+#   backward_x_fill <- rep(backward_border_x, forward_border - backward_border)
+#   forward_x_fill_2 <- rep(forward_border, forward_border - backward_border) -
+#     1:length(forward_x_fill)
+#   backward_x_fill_2 <- 1:length(forward_x_fill) -
+#     rep(backward_border, forward_border - backward_border)
+# 
+#   #linear interpolation
+#   vec <- (forward_x_fill + backward_x_fill)/2
+# 
+#   x[is.na(x)] <- vec[is.na(x)]
+#   return(x)
+# }
+# 
+# 
+# # apply and submit --------------------------------------------------------
+# 
+# cat("Applying interaction interpolation\n")
+# allCompaniesAndDays[, filled := interpolateFun(V1), by = "group_1"]
+# 
+# d1 <- merge(
+#   d1,
+#   allCompaniesAndDays,
+#   all.x = T,all.y = F,
+#   by.x = c("group_1","activdate"),
+#   by.y = c("group_1","date.p")
+# )
+# 
+# 
+# cat("Predicting leak\n")
+# ## Create prediction file and write
+# testsetdt <- d1[
+#   d1$people_id %in% ppl$people_id[testset],
+#   c("activity_id","filled"), with = F
+#   ]
+# 
+# cat("There are ", sum(is.na(testsetdt$filled)), " unknown observations.\nThere are ", length(testsetdt[testsetdt$filled == 0.5, filled]), " uncertain observations (equal to 0.5 - anokas' idea).\n", sep = "")
+# cat("Adjusting leak with NA when unsure using anokas' idea (0.5 leakage => raddar's)\n")
+# # testsetdt[testsetdt$filled == 0.5, "filled"] <- NA
+# # cat("There are now in total ", sum(is.na(testsetdt$filled)), " unknown observations.\n", sep = "")
+# 
+# write.csv(testsetdt,"Submission.csv", row.names = FALSE)
+# 
+# cat("Cleaning up...\n")
+# remove(list = ls())
+# gc(verbose=FALSE)
 
 
-cat(Sys.time())
-cat("Combining two submissions on targeted observations (NAs)\n")
 
-submit1 <- fread("Submission.csv")
-submit2 <- fread("model_sub.csv")
-submit3 <- merge(submit1[is.na(submit1$filled), ], submit2, by = "activity_id", all.x = T)
-submit4 <- merge(submit1, submit3, by = "activity_id", all.x = T)
-submit4$filled.x[is.na(submit4$filled.x)] <- submit4$outcome[is.na(submit4$filled.x)]
-submit5 <- data.frame(activity_id = submit4$activity_id, outcome = submit4$filled.x, stringsAsFactors = FALSE)
-write.csv(submit5, file="raddar_goes_ham.csv", row.names=FALSE)
+# ## Combo
+# 
+# # Not elegant but fast enough for our taste, could go sqldf one-liner >_>
+# 
+# 
+# cat(Sys.time())
+# cat("Combining two submissions on targeted observations (NAs)\n")
+# 
+# submit1 <- fread("Submission.csv")
+# submit_full <- fread("model_full.csv")
+# submit_short <-fread("model_short.csv")
+
+# submit4 <- merge(submit1, submit_full, by = "activity_id", all.x = T)
+# submit4 <- merge(submit4, submit_short, by = "activity_id", all.x = T)
+# submit4$filled[is.na(submit4$filled)] <- submit4$outcome.y[is.na(submit4$filled)]
+# submit4$filled[submit4$filled == 0.5] <- submit4$outcome.x[submit4$filled == 0.5]
+# submit5 <- data.frame(activity_id = submit4$activity_id, outcome = submit4$filled, stringsAsFactors = FALSE)
+# write.csv(submit5, file="raddar_goes_ham_combo.csv", row.names=FALSE)
+
+# submit3 <- merge(submit1[is.na(submit1$filled), ], submit2, by = "activity_id", all.x = T)
+# submit4 <- merge(submit1, submit3, by = "activity_id", all.x = T)
+# submit4$filled.x[is.na(submit4$filled.x)] <- submit4$outcome[is.na(submit4$filled.x)]
+# submit5 <- data.frame(activity_id = submit4$activity_id, outcome = submit4$filled.x, stringsAsFactors = FALSE)
+# write.csv(submit5, file="raddar_goes_ham.csv", row.names=FALSE)
+
