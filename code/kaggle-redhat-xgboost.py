@@ -13,141 +13,190 @@ import copy
 
 np.random.seed(42)
 
+# --------------------------------------------------------#
+# Processing functions
+
+def reduce_dimen(dataset,column,toreplace):
+    for index,i in dataset[column].duplicated(keep=False).iteritems():
+        if i==False:
+            dataset.set_value(index,column,toreplace)
+    return dataset
+
+def process_date(input_df):
+    df = input_df.copy()
+    return (df.assign(year=lambda df: df.date.dt.year,  # Extract year
+                      month=lambda df: df.date.dt.month,  # Extract month
+                      day=lambda df: df.date.dt.day, # Extract day
+                      weekday=lambda df: df.date.dt.weekday) # Extract workday
+            )
+
+
+def process_activity_category(input_df):
+    df = input_df.copy()
+    return df.assign(activity_category=lambda df:
+                     df.activity_category.str.lstrip('type ').astype(np.int32))
+
+
+def process_activities_char(input_df, columns_range):
+    """
+    Extract the integer value from the different char_* columns in the
+    activities dataframes. Fill the missing values with 999999 as well
+    """
+    df = input_df.copy()
+    char_columns = ['char_' + str(i) for i in columns_range]
+    return (df[char_columns].fillna('type 999999')
+            .apply(lambda col: col.str.lstrip('type ').astype(np.int32))
+            .join(df.drop(char_columns, axis=1)))
+
+
+def activities_processing(input_df):
+    """
+    This function combines the date, activity_category and char_*
+    columns transformations.
+    """
+    df = input_df.copy()
+    return (df.pipe(process_date)
+              .pipe(process_activity_category)
+              .pipe(process_activities_char, range(1, 11)))
+
+
+def process_group_1(input_df):
+    df = input_df.copy()
+    return df.assign(group_1=lambda df:
+                     df.group_1.str.lstrip('group ').astype(np.int32))
+
+
+# TODO: Refactor the different *_char functions
+
+def process_people_cat_char(input_df, columns_range):
+    """
+    Extract the integer value from the different categorical char_*
+    columns in the people dataframe.
+    """
+    df = input_df.copy()
+    cat_char_columns = ['char_' + str(i) for i in columns_range]
+    return (df[cat_char_columns].apply(lambda col:
+                                       col.str.lstrip('type ').astype(np.int32))
+                                .join(df.drop(cat_char_columns, axis=1)))
+
+
+def process_people_bool_char(input_df, columns_range):
+    """
+    Extract the integer value from the different boolean char_* columns in the
+    people dataframe.
+    """
+    df = input_df.copy()
+    boolean_char_columns = ['char_' + str(i) for i in columns_range]
+    return (df[boolean_char_columns].apply(lambda col: col.astype(np.int32))
+                                    .join(df.drop(boolean_char_columns,
+                                                  axis=1)))
+
+
+# TODO: Extract the magic ranges (1 to 10 and 10 to 38) programmatically
+
+def people_processing(input_df):
+    """
+    This function combines the date, group_1 and char_*
+    columns (inclunding boolean and categorical ones) transformations.
+    """
+    df = input_df.copy()
+    return (df.pipe(process_date)
+              .pipe(process_group_1)
+              .pipe(process_people_cat_char, range(1, 10))
+              .pipe(process_people_bool_char, range(10, 38)))
+
+
+def merge_with_people(input_df, people_df):
+    """
+    Merge (left) the given input dataframe with the people dataframe and
+    fill the missing values with 999999.
+    """
+    df = input_df.copy()
+    return (df.merge(people_df, how='left', on='people_id',
+                     left_index=True, suffixes=('_act', '_ppl'))
+            .fillna(999999))
+
+# --------------------------------------------------------#
+
 def intersect(a, b):
     return list(set(a) & set(b))
 
 # add derived features here
 def derive_features(train, test):
     print("Derive new features...")
+    # Delta in days
+    train['date_lag'] = (train.date_act - train.date_ppl).dt.days
+    test['date_lag'] = (test.date_act - test.date_ppl).dt.days
 
-    # 1. DO NOT TURN ON
-    # meanlist = [
-    #     [['act_date'],'mean_by_act_date'],\
-    #     [['ppl_date'],'mean_by_ppl_date'],\
-    #     [['act_date','ppl_char_38'],'mean_by_ch38_act_date'],
-    #     [['act_date','ppl_char_7'],'mean_by_ch7_act_date']]
-    # for key in meanlist:
-    #     basis = key[0]
-    #     label = key[1]
-    #     mean_outcome = train.groupby(basis).agg({'outcome':np.nanmean}).reset_index()
-    #     mean_outcome = mean_outcome.rename(columns={'outcome':label})
-    #     train = pd.merge(train,mean_outcome,on=basis,how='left')
-    #     test = pd.merge(test,mean_outcome,on=basis,how='left')
-    #     crossval = pd.merge(crossval,mean_outcome,on=basis,how='left')
+    # train['ppl_date_weekend'] = (train.weekday_ppl >= 5)
+    # train['act_date_weekend'] = (train.weekday_act >= 5)
+    # test['ppl_date_weekend'] = (test.weekday_ppl >= 5)
+    # test['act_date_weekend'] = (test.weekday_act >= 5)
 
-    # # 2. DO NOT TURN ON
-    # basis = ['act_date','ppl_group_1']
-    # median_outcome = train.groupby(basis).agg({'outcome':np.nanmedian}).reset_index()
-    # median_outcome = median_outcome.rename(columns={'outcome':'median_by_grp_act_date'})
-    # train = pd.merge(train,median_outcome,on=basis,how='left')
-    # test = pd.merge(test,median_outcome,on=basis,how='left')
-    # crossval = pd.merge(crossval,median_outcome,on=basis,how='left')
 
-    # 3. merge top 3 features
-    # tomerge = [\
-    #     ['ppl_group_1','ppl_char_7','ppl_grp1_char7'],
-    #     ['ppl_group_1','ppl_char_38','ppl_grp1_char38'],
-    #     ['ppl_group_1','ppl_char_6','ppl_grp1_char6'],
-    #     ['ppl_char_38','ppl_char_7','ppl_char38_char7'],
-    #     ['ppl_char_38','ppl_char_6','ppl_char38_char6']
-    # ]
-    # for feat in tomerge:
-    #     train['foo1'] = train[feat[0]].astype('str')
-    #     train['foo2'] = train[feat[1]].astype('str')
-    #     train[feat[2]] = train['foo1'] + train['foo2']
-    #     train[feat[2]] = train[feat[2]].astype(np.int32)
+    # count of activity by people_id
+    # count = train.groupby(['people_id']).count()[['activity_id']]
+    # count = count.rename(columns = {'activity_id' : 'count_people_id'}).reset_index()
+    # train = train.merge(count, on='people_id', how='left')
+    # test = test.merge(count, on='people_id', how='left')
 
-    #     test['foo1'] = test[feat[0]].astype('str')
-    #     test['foo2'] = test[feat[1]].astype('str')
-    #     test[feat[2]] = test['foo1'] + test['foo2']
-    #     test[feat[2]] = test[feat[2]].astype(np.int32)
+    # count of activity_id by date
+    # count = pd.concat([train,test]).groupby(['date_act']).count()[['activity_id']]
+    # count = count.rename(columns = {'activity_id' : 'act_id_by_date'}).reset_index()
+    # train = train.merge(count, on='date_act', how='left')
+    # test = test.merge(count, on='date_act', how='left')
 
-    # del train['foo1'], train['foo2']
-    # del test['foo1'], test['foo2']
+    # count of activity by person
+    # count = pd.concat([train,test]).groupby(['people_id']).count()[['activity_id']]
+    # count = count.rename(columns = {'activity_id' : 'act_id_by_ppl'}).reset_index()
+    # train = train.merge(count, on='people_id', how='left')
+    # test = test.merge(count, on='people_id', how='left')
 
     return train, test
 
-
 def get_features(train, test):
-    trainval = list(train.columns.values)
-    testval = list(test.columns.values)
-    output = intersect(trainval, testval)
-    output.remove('people_id')
-    output.remove('activity_id')
-    output.remove('act_date')
-    output.remove('ppl_date')
-    output.remove('act_char_10')
-    # output.remove('ppl_group_1')
-    return sorted(output)
+    features = intersect(train.columns, test.columns)
+    features.remove('people_id')
+    features.remove('activity_id')
+    # features.remove('char_10_act')
+    # features.remove('group_1')
+    features.remove('date_act')
+    features.remove('date_ppl')
+    return sorted(features)
 
 def read_test_train():
     print("Load people.csv...")
-    people = pd.read_csv("../input/people.csv",
+    people_df = pd.read_csv("../input/people.csv",
                        dtype={'people_id': np.str,
                               'activity_id': np.str,
                               'char_38': np.int32},
                        parse_dates=['date'])
 
     print("Load train.csv...")
-    train = pd.read_csv("../input/act_train.csv",
+    train_df = pd.read_csv("../input/act_train.csv",
                         dtype={'people_id': np.str,
                                'activity_id': np.str,
                                'outcome': np.int8},
                         parse_dates=['date'])
 
     print("Load test.csv...")
-    test = pd.read_csv("../input/act_test.csv",
+    test_df = pd.read_csv("../input/act_test.csv",
                        dtype={'people_id': np.str,
                               'activity_id': np.str},
                        parse_dates=['date'])
 
     print("Pre-process tables...")
-    for table in [train, test]:
-        # table['year'] = table['date'].dt.year.astype(np.int32)
-        # table['month'] = table['date'].dt.month.astype(np.int32)
-        # table['day'] = table['date'].dt.day.astype(np.int32)
-        # table['weekday'] = table['date'].dt.weekday.astype(np.int32)
-        # table['isweekend'] = (table['weekday'] >= 5).astype(np.int32)
-        table['activity_category'] = table['activity_category'].str.lstrip('type ').astype(np.int32)
-        for i in range(1, 11):
-            cursor = 'char_' + str(i)
-            table[cursor].fillna('type 99999',inplace=True)
-            table.loc[table[cursor].notnull(),cursor] = \
-                table.loc[table[cursor].notnull(),cursor].str.lstrip('type ').astype(np.int32)
-
-    # people['year'] = people['date'].dt.year.astype(np.int32)
-    # people['month'] = people['date'].dt.month.astype(np.int32)
-    # people['day'] = people['date'].dt.day.astype(np.int32)
-    # people['weekday'] = people['date'].dt.weekday.astype(np.int32)
-    # people['isweekend'] = (people['weekday'] >= 5).astype(np.int32)
-    people['group_1'] = people['group_1'].str.lstrip('group ').astype(np.int32)
-    for i in range(1, 10):
-        cursor = 'char_' + str(i)
-        people.loc[people[cursor].notnull(),cursor] = \
-            people.loc[people[cursor].notnull(),cursor].str.lstrip('type ').astype(np.int32)
-    for i in range(10, 38):
-        cursor = 'char_' + str(i)
-        people.loc[people[cursor].notnull(),cursor] = \
-            people.loc[people[cursor].notnull(),cursor].astype(np.int32)
-
-    print("Merge with people...")
-    # rename features correspondingly
-    people.columns = ['ppl_'+x if x not in ['people_id'] else x for x in people.columns]
-    train.columns = ['act_'+x if x not in ['people_id','outcome','activity_id'] else x for x in train.columns]
-    test.columns = ['act_'+x if x not in ['people_id','activity_id'] else x for x in test.columns]
-
-    # merge
-    train = pd.merge(train, people, how='left', on='people_id', left_index=True)
-    test = pd.merge(test, people, how='left', on='people_id', left_index=True)
     
+    people = people_df.pipe(people_processing)
+    train = (train_df.pipe(activities_processing)
+        .pipe(merge_with_people, people))
+    test = (test_df.pipe(activities_processing)
+        .pipe(merge_with_people, people))
+
     return train, test
 
 
 def run_single(train,test,features,target,valsize):
-
-    # creating sparse matrix
-    print('Creating sparse matrix...')
-    # train = train.drop_duplicates(features)
 
     # create a small validation set - unique people id
     if valsize > 0:
@@ -160,53 +209,51 @@ def run_single(train,test,features,target,valsize):
     
     y_train = train[target]
     
-    # if not hot encoding - use these
+    # # if not hot encoding - use these
     # train = train[features]
     # test = test[features]
 
     # hot encode
+    print('Creating sparse matrix...')
+    if valsize > 0:
+        X = pd.concat([train[features],test[features],valid[features]])
+    else:
+        X = pd.concat([train[features],test[features]])
 
-    X = pd.concat([train[features],test[features]])
-
-    categorical=['group_1','activity_category','act_char_1','act_char_2','act_char_3',
-        'act_char_4','act_char_5','act_char_6','act_char_7','act_char_8','act_char_9',
-        'ppl_char_2','ppl_char_3','ppl_char_4','ppl_char_5','ppl_char_6','ppl_char_7',
-        'ppl_char_8','ppl_char_9']
+    categorical=['group_1','char_10_act','activity_category','char_1_act','char_2_act','char_3_act',
+        'char_4_act','char_5_act','char_6_act','char_7_act','char_8_act','char_9_act',
+        'char_2_ppl','char_3_ppl','char_4_ppl','char_5_ppl','char_6_ppl','char_7_ppl',
+        'char_8_ppl','char_9_ppl','date_lag','month_act','month_ppl','weekday_act','weekday_ppl',
+        'day_act','day_ppl']
     not_categorical=[]
-    for category in .columns:
+    for category in X.columns:
         if category not in categorical:
             not_categorical.append(category)
-
-enc = OneHotEncoder(handle_unknown='ignore')
-enc=enc.fit(pd.concat([X[categorical],X_test[categorical]]))
-X_cat_sparse=enc.transform(X[categorical])
-X_test_cat_sparse=enc.transform(X_test[categorical])
-
-from scipy.sparse import hstack
-X_sparse=hstack((X[not_categorical], X_cat_sparse))
-X_test_sparse=hstack((X_test[not_categorical], X_test_cat_sparse))
-
-    enc = OneHotEncoder(handle_unknown='ignore',dtype=np.int32)
+    
+    enc = OneHotEncoder(handle_unknown='ignore')
+    enc = enc.fit(X[categorical])
+    train_sparse_cat = enc.transform(train[categorical])
+    test_sparse_cat = enc.transform(test[categorical])
     if valsize > 0:
-        enc.fit(pd.concat([train[features],test[features],valid[features]]))
-    else:
-        enc.fit(pd.concat([train[features],test[features]]))
-    train = enc.transform(train[features])
-    test = enc.transform(test[features])
+        valid_sparse_cat = enc.transform(valid[categorical])
+    
+    from scipy.sparse import hstack
+    train = hstack((train[not_categorical], train_sparse_cat))
+    test = hstack((test[not_categorical], test_sparse_cat))
     if valsize > 0:
-        valid = enc.transform(valid[features])
+        valid = hstack((valid[not_categorical], valid_sparse_cat))
 
-    dtrain = xgb.DMatrix(train, label = y_train)
-    dtest = xgb.DMatrix(test)
+    dtrain = xgb.DMatrix(train, label = y_train, missing = 999999)
+    dtest = xgb.DMatrix(test, missing = 999999)
 
     if valsize > 0:
-        dvalid = xgb.DMatrix(valid, label = y_valid)
+        dvalid = xgb.DMatrix(valid, label = y_valid, missing = 999999)
 
     print('Shape of train: {}'.format(train.shape))
     print('Shape of test: {}'.format(test.shape))
 
-    # tree booster params
-    # num_boost_round = 150
+    # # tree booster params
+    # num_boost_round = 29
     # early_stopping_rounds = 10
     # start_time = time.time()
     # params = {
@@ -216,7 +263,7 @@ X_test_sparse=hstack((X_test[not_categorical], X_test_cat_sparse))
     #     "eta": 0.01,
     #     "gamma": 0,
     #     "tree_method": 'exact',
-    #     "max_depth": 10,
+    #     "max_depth": 12,
     #     "min_child_weight": 2,
     #     "subsample": 0.7,
     #     "colsample_bytree": 0.7,
@@ -225,7 +272,7 @@ X_test_sparse=hstack((X_test[not_categorical], X_test_cat_sparse))
     # }
 
     # linear booster params
-    num_boost_round = 10
+    num_boost_round = 110
     early_stopping_rounds = 10
     start_time = time.time()
     params = {
@@ -254,10 +301,10 @@ X_test_sparse=hstack((X_test[not_categorical], X_test_cat_sparse))
 
     print("Validating...")
     if valsize > 0:
-        check = gbm.predict(dvalid) #, ntree_limit=gbm.best_iteration+1)
+        check = gbm.predict(dvalid)#, ntree_limit=gbm.best_iteration+1)
         score = roc_auc_score(y_valid.values, check)
     else:
-        check = gbm.predict(dtrain) #, ntree_limit=gbm.best_iteration+1)
+        check = gbm.predict(dtrain)#, ntree_limit=gbm.best_iteration+1)
         score = roc_auc_score(y_train.values, check)
     print('Check error value: {:.6f}'.format(score))
 
@@ -277,8 +324,8 @@ def get_importance(gbm, features):
 
 def grid_search_CV(X_train,y_train,X_valid,y_valid):
     print('Launching Grid Search CV...')
-    dtrain = xgb.DMatrix(X_train, label = y_train, missing = -999)
-    dvalid = xgb.DMatrix(X_valid, label = y_valid, missing = -999)
+    dtrain = xgb.DMatrix(X_train, label = y_train, missing = 999999)
+    dvalid = xgb.DMatrix(X_valid, label = y_valid, missing = 999999)
     watchlist = [(dtrain, 'train'), (dvalid, 'eval')]
 
     eta = 0.1
@@ -309,7 +356,7 @@ def grid_search_CV(X_train,y_train,X_valid,y_valid):
     #         # 'subsample': [0.6,0.8,1.0],
     #         # 'colsample_bytree': [0.6,0.8,1.0]},
 
-    param_i = 'gamma'
+    param_i = 'maxdepth'
     param_j = 'subsample'
     for i in np.arange(0.0,0.6,0.1):
         for j in np.arange(0.5,1.0,0.1):
@@ -372,17 +419,20 @@ def create_submission(score, test, pred, model, importance, averaged):
 
 if __name__ == '__main__':
     train, test = read_test_train()
-    train = train.iloc[0:10,]
-    test = test.iloc[0:10,]
+    # train = train.iloc[0:10,]
+    # test = test.iloc[0:10,]
     train, test = derive_features(train, test)
     features = get_features(train, test)
+
+    # reduce dimension for linear case
+    train = reduce_dimen(train,'char_10_act',99999)
+    train = reduce_dimen(train,'group_1',99999)
 
     print('Shape of train: {}'.format(train.shape))
     print('Shape of test: {}'.format(test.shape))
     print('Features [{}]: {}'.format(len(features), sorted(features)))
 
     prediction, score, model, importance = run_single(train,test,features,'outcome',0)
-    # # # prediction, score = run_kfold(3, train, test, features, 'outcome')
     # # grid = grid_search_CV(train[features],train['outcome'],\
     # #     crossval[features],crossval['outcome'])
 

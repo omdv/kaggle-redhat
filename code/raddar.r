@@ -74,7 +74,7 @@ D$i=1:dim(D)[1]
 
 
 char.cols=c('activity_category','people_group_1',
-            'char_1','char_2','char_3','char_4','char_5','char_6','char_7','char_8','char_9','char_10',
+            'char_1','char_2','char_3','char_4','char_5','char_6','char_7','char_8','char_9',
             'people_char_2','people_char_3','people_char_4','people_char_5','people_char_6','people_char_7','people_char_8','people_char_9')
 for (f in char.cols) {
   if (class(D[[f]])=="character") {

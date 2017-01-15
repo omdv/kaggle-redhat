@@ -114,9 +114,9 @@ param['booster'] = "gblinear"
 watchlist  = [(dtrain,'train')]
 num_round = 300
 early_stopping_rounds=10
-bst = xgb.train(param, dtrain, num_round, watchlist,early_stopping_rounds=early_stopping_rounds)
+# bst = xgb.train(param, dtrain, num_round, watchlist,early_stopping_rounds=early_stopping_rounds)
 
-ypred = bst.predict(dtest)
-output = pd.DataFrame({ 'activity_id' : test['activity_id'], 'outcome': ypred })
-output.head()
-output.to_csv('without_leak.csv', index = False)
+# ypred = bst.predict(dtest)
+# output = pd.DataFrame({ 'activity_id' : test['activity_id'], 'outcome': ypred })
+# output.head()
+# output.to_csv('without_leak.csv', index = False)
